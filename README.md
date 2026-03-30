@@ -10,7 +10,6 @@ A reproducible demo showing Claude Code generating code, the Semgrep plugin auto
 - [Claude Code CLI](https://docs.anthropic.com/en/docs/claude-code) installed
 - `semgrep@claude-plugins-official` plugin enabled in `~/.claude/settings.json`
 - Semgrep 1.x+ installed and authenticated (`SEMGREP_APP_TOKEN` set)
-- Flask (`pip install -r requirements.txt`)
 
 **Run the automated check:**
 

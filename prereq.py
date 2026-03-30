@@ -90,19 +90,7 @@ def main():
             "  sudo apt install python3.12 # Ubuntu/Debian",
         )
 
-    # ── 2. Flask installed ───────────────────────────────────────────────────
-    try:
-        import flask
-
-        check_pass(f"Flask {flask.__version__}")
-    except ImportError:
-        check_fail(
-            "Flask not installed",
-            "Install from the project requirements:\n"
-            f"  pip install -r {os.path.join(DEMO_DIR, 'requirements.txt')}",
-        )
-
-    # ── 3. Claude Code CLI ───────────────────────────────────────────────────
+    # ── 2. Claude Code CLI ───────────────────────────────────────────────────
     print("\n[Claude Code]\n")
 
     rc, out, err = run_cmd(["claude", "--version"])
