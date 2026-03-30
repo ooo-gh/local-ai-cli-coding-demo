@@ -6,15 +6,25 @@ A reproducible demo showing Claude Code generating code, the Semgrep plugin auto
 
 ## Prerequisites
 
+- Python 3.10+
 - [Claude Code CLI](https://docs.anthropic.com/en/docs/claude-code) installed
 - `semgrep@claude-plugins-official` plugin enabled in `~/.claude/settings.json`
-- Semgrep installed and authenticated (`semgrep --version`, `SEMGREP_APP_TOKEN` set)
-- Python 3.10+
+- Semgrep 1.x+ installed and authenticated (`SEMGREP_APP_TOKEN` set)
+- Flask (`pip install -r requirements.txt`)
+
+**Run the automated check:**
+
+```bash
+python3 prereq.py
+```
+
+This verifies every prerequisite and shows exactly what's missing and how to fix it.
 
 ## Quick Start
 
 ```bash
 cd taskboard-demo
+python3 prereq.py   # verify everything is ready
 claude
 # Paste the prompt below into Claude Code
 ```
@@ -64,32 +74,25 @@ The `CLAUDE.md` file contains project conventions that naturally steer Claude to
 - **`app.py`** — Minimal Flask skeleton with a `get_db()` helper that returns a raw sqlite3 connection
 - **PostToolUse hook** — From the `semgrep@claude-plugins-official` plugin, runs `semgrep mcp -k post-tool-cli-scan` after every `Write` or `Edit` tool call
 
-## Recreating From Scratch
-
-To set up a fresh copy (e.g., after running the demo):
-
-```bash
-# From the parent directory
-./setup-demo.sh my-fresh-demo
-cd my-fresh-demo
-claude
-```
-
-Or reset the current repo:
+## Resetting After a Demo Run
 
 ```bash
 python3 reset.py
 ```
 
-## Verification Checklist
+This restores the scaffold to its clean state. It uses `git checkout` + `git clean` when a git repo is available, and falls back to regenerating scaffold files from embedded content if git is unavailable. It runs `prereq.py` at the end to verify everything is clean.
 
-Before presenting:
+## Verification
 
-- [ ] `semgrep --version` works and shows 1.x+
-- [ ] `echo $SEMGREP_APP_TOKEN` is set
-- [ ] `claude` starts and shows "Semgrep (compatible)" in session start
-- [ ] `app.py` is the clean skeleton (no feature routes)
-- [ ] No `templates/tasks/` directory exists yet
+Before presenting, run the prerequisite checker:
+
+```bash
+python3 prereq.py
+```
+
+It checks: Python version, Flask, Claude Code CLI, Semgrep plugin enabled, Semgrep installed, `SEMGREP_APP_TOKEN`, scaffold integrity, clean app.py, and no leftover demo artifacts. Any failures include fix instructions.
+
+Additionally verify that `claude` starts and shows "Semgrep (compatible)" in the session start output.
 
 ## Troubleshooting
 
