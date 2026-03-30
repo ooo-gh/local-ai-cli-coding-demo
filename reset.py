@@ -261,6 +261,7 @@ def run_prereq_check():
 
     print("\n" + "-" * 50)
     print("Running prerequisite check...\n")
+    sys.stdout.flush()
     result = subprocess.run(
         [sys.executable, prereq_path],
         cwd=DEMO_DIR,
