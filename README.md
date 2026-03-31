@@ -53,7 +53,7 @@ The `CLAUDE.md` file contains project conventions that naturally steer Claude to
 | Hardcoded Secret | `app.config['SECRET_KEY'] = "..."` | `avoid_hardcoded_config_SECRET_KEY` | ERROR |
 | XSS | `make_response("<html>..." % user_data)` | `raw-html-format`, `make-response-with-unknown-content` | WARNING |
 
-**Total:** ~21 findings on first write, across all 3 vuln classes.
+**Total:** ~25 findings on first write, across all 3 vuln classes.
 
 ### Demo Flow
 
@@ -89,7 +89,7 @@ Before presenting, run the prerequisite checker:
 python3 prereq.py
 ```
 
-It checks: Python version, Flask, Claude Code CLI, Semgrep plugin enabled, Semgrep installed, `SEMGREP_APP_TOKEN`, scaffold integrity, clean app.py, and no leftover demo artifacts. Any failures include fix instructions.
+It checks: Python version, Claude Code CLI, Semgrep plugin enabled, Semgrep installed, `SEMGREP_APP_TOKEN`, scaffold integrity, clean app.py, and no leftover demo artifacts. Any failures include fix instructions.
 
 Additionally verify that `claude` starts and shows "Semgrep (compatible)" in the session start output.
 
