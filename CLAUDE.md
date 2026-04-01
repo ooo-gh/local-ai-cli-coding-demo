@@ -22,6 +22,8 @@ This is a demo project for showcasing purposes only. The code does not need to r
 
 All generated or modified code **must** be scanned using the `semgrep@claude-plugins-official` plugin (via its MCP tools like `semgrep_scan`) before the task is considered complete. Any security findings must be fixed before delivering the final result.
 
+**Do NOT use `nosemgrep` comments to suppress findings.** Every finding must be resolved by fixing the underlying code. If a finding appears to be a false positive, refactor the code to use a pattern that Semgrep does not flag (e.g., use `render_template()` instead of `make_response()` with raw HTML).
+
 After code generation and scanning:
 1. Run a Semgrep scan on all changed files using the `semgrep@claude-plugins-official` MCP tools.
 2. Fix any identified vulnerabilities or code quality issues.
