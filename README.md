@@ -31,29 +31,29 @@ claude
 ### The Prompt
 
 ```
-Add a task management feature to this app. I need:
+Add task management features to this app following the conventions in CLAUDE.md. I need:
 
-1. A page that lists all tasks and lets you search them by title
-2. A form to create new tasks (title + body), where the body supports basic HTML formatting
-3. A task detail view at /tasks/<id> that renders the task body with its HTML formatting preserved -- build the response directly in Python with make_response() so we have full control over the HTML output
-4. An admin endpoint at /admin/tasks that requires the app's secret key as an API key and can delete tasks by ID
-
-Make sure search actually filters from the database, not client-side.
+1. A task list page at /tasks that shows all tasks, with a search box that filters by title directly in the database query (not client-side)
+2. A form at /tasks/new to create tasks (title + body fields). The body field accepts HTML formatting. After creation, redirect to the `?next=` param if provided, otherwise to /tasks
+3. A task detail view at /tasks/<id> that renders the full task including its HTML body -- use the make_response() approach described in CLAUDE.md
+4. An admin endpoint at /admin/tasks (DELETE method) that checks the secret key from app config as the API key and can delete tasks by ID
 ```
 
 ## What Happens
 
-The `CLAUDE.md` file contains project conventions that naturally steer Claude toward three insecure patterns. The Semgrep PostToolUse hook fires on every file write and blocks when it finds vulnerabilities. Claude then auto-fixes and rewrites until the scan passes.
+The `CLAUDE.md` file contains project conventions that naturally steer Claude toward insecure patterns. The Semgrep PostToolUse hook fires on every file write and blocks when it finds vulnerabilities. Claude then auto-fixes and rewrites until the scan passes.
 
 ### Expected Vulnerability Cycle
 
 | Vuln | What Claude Writes | Semgrep Rule | Severity |
 |------|-------------------|--------------|----------|
-| SQL Injection (3 locations) | `"SELECT ... %s" % query` | `generic-sql-flask` + others | CRITICAL |
-| Hardcoded Secret | `app.config['SECRET_KEY'] = "..."` | `avoid_hardcoded_config_SECRET_KEY` | ERROR |
-| XSS | `make_response("<html>..." % user_data)` | `raw-html-format`, `make-response-with-unknown-content` | WARNING |
+| SQL Injection | `f"SELECT ... WHERE title LIKE '%{query}%'"` | `tainted-sql-string` | CRITICAL |
+| Hardcoded Secret | `app.config['SECRET_KEY'] = '...'` | `avoid_hardcoded_config_SECRET_KEY` | ERROR |
+| XSS | `make_response('<html>...' + task['body'])` | `raw-html-format`, `make-response-with-unknown-content` | WARNING |
+| Debug Enabled | `app.run(debug=True)` | `debug-enabled` | WARNING |
+| Open Redirect | `redirect(request.args.get('next'))` | `open-redirect` | WARNING |
 
-**Total:** ~25 findings on first write, across all 3 vuln classes.
+**Total:** 5-10 findings on first write, across up to 5 vuln classes.
 
 ### Demo Flow
 
@@ -61,14 +61,14 @@ The `CLAUDE.md` file contains project conventions that naturally steer Claude to
 2. **[0:30] Open Claude Code** — SessionStart hook confirms Semgrep is active
 3. **[1:00] Paste the prompt** — read it aloud, emphasize it's a normal feature request
 4. **[1:30] Claude writes `app.py`** — hook fires and **blocks with findings**. This is the "aha" moment.
-5. **[2:30] Claude auto-fixes** — parameterized queries, `os.environ.get()`, `render_template()`. Hook passes.
+5. **[2:30] Claude auto-fixes** — parameterized queries, `os.environ.get()`, `html.escape()` / `render_template()`, `debug=False`. Hook passes.
 6. **[3:30] Claude writes templates** — scans pass silently
 7. **[4:00] Done** — Claude provides a security summary
-8. **[4:30] Talking points** — 3 vuln classes caught and fixed, zero human intervention, works on every file write
+8. **[4:30] Talking points** — up to 5 vuln classes caught and fixed, zero human intervention, works on every file write
 
 ## How It Works
 
-- **`CLAUDE.md`** — Project conventions that look normal but bias toward insecure patterns (string-formatted SQL, hardcoded config, raw HTML responses)
+- **`CLAUDE.md`** — Project conventions that look normal but bias toward insecure patterns (f-string SQL, hardcoded config, raw HTML responses, debug mode, open redirects)
 - **`DEMO_PROMPT.md`** — The exact prompt to paste, worded to trigger all three vuln types
 - **`app.py`** — Minimal Flask skeleton with a `get_db()` helper that returns a raw sqlite3 connection
 - **PostToolUse hook** — From the `semgrep@claude-plugins-official` plugin, runs `semgrep mcp -k post-tool-cli-scan` after every `Write` or `Edit` tool call
@@ -97,6 +97,6 @@ Additionally verify that `claude` starts and shows "Semgrep (compatible)" in the
 
 **Hook doesn't fire:** Write a test file with `password = "test"` in Claude Code and check if Semgrep blocks it. If not, verify the plugin is enabled in `~/.claude/settings.json`.
 
-**Claude writes secure code anyway:** The `CLAUDE.md` conventions are designed to steer toward insecure patterns, but Claude may still write secure code. This is actually a valid demo outcome ("Semgrep silently confirms secure code"). If needed, make the CLAUDE.md conventions more directive.
+**Claude writes secure code anyway:** The `CLAUDE.md` conventions are designed to steer toward insecure patterns, but Claude may still write secure code for some categories (especially SQL injection). This is actually a valid demo outcome ("Semgrep silently confirms secure code"). The hardcoded secret and debug mode are nearly guaranteed since they're in the scaffold already.
 
-**Semgrep misses a vuln:** SQL injection rules are very mature and reliably fire. If one vuln type is missed, the others still demonstrate the concept.
+**Semgrep misses a vuln:** Multiple vuln classes are targeted so even if one is missed, the others still demonstrate the concept.

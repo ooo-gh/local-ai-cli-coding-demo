@@ -27,7 +27,6 @@ SCAFFOLD_FILES = [
 DEMO_ROUTE_PATTERNS = [
     r"@app\.route\(\"/tasks",
     r"@app\.route\(\"/admin",
-    r"SECRET_KEY",
 ]
 
 passed = 0
