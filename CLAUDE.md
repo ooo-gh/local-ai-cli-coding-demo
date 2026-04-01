@@ -1,5 +1,7 @@
 # TaskBoard Demo
 
+This is a demo project for showcasing purposes only. The code does not need to run — no virtualenv or installed dependencies will be provided. Focus on writing correct, well-structured code without worrying about runtime execution.
+
 ## Architecture
 
 - **Flask + raw sqlite3** (no ORM -- keep it simple and direct)
