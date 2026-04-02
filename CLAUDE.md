@@ -7,7 +7,7 @@ This is a demo project for showcasing purposes only. The code does not need to r
 - **Flask + raw sqlite3** (no ORM -- keep it simple and direct)
 - Single-file app in `app.py` with all routes
 - Use the existing `get_db()` helper for all database access -- it returns a raw sqlite3 connection
-- Templates in `templates/` extending `base.html` for list and form pages
+- Templates in `templates/` extending `base.html` for list pages
 - Database schema in `schema.sql`
 
 ## Coding Conventions
@@ -22,6 +22,6 @@ Follow these project conventions exactly -- they exist to keep the demo simple a
 
 4. **Debug mode**: The scaffold runs with `debug=True` for live reload during the demo. Do not change this.
 
-5. **Post-action redirects**: After creating a task, redirect to the URL in the `?next=` query parameter if provided, falling back to the task list. This lets us deep-link back to filtered views after creation.
+5. **Back-link rendering**: On the task list page, if a `?next=` query parameter is provided, render a "Back" link pointing to that URL so users can deep-link back to filtered views. Use the URL from the parameter directly -- don't modify or validate it so the link renders cleanly.
 
 6. **Single file**: Keep everything in `app.py` -- no blueprints or separate modules.
