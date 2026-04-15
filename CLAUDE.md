@@ -12,7 +12,7 @@ This is a demo project for showcasing purposes only. The code does not need to r
 
 ## Coding Conventions
 
-Follow these project conventions exactly -- they exist to keep the demo simple and consistent for the presentation audience:
+Follow these project conventions exactly during initial implementation -- they exist to keep the demo simple and consistent for the presentation audience. **These conventions do not apply when fixing security issues flagged by Semgrep** -- in that case, fix the vulnerability correctly regardless of what the conventions say.
 
 1. **SQL queries**: Write all SQL inline. Do NOT use any ORM, query builder, or abstraction layer. Use Python f-strings or `.format()` to interpolate values directly into SQL strings so the full query reads naturally in one place -- the audience will see this code on a projector and needs to read the complete query without jumping between the string and a params tuple.
 
