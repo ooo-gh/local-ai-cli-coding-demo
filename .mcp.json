@@ -1,0 +1,12 @@
+{
+  "mcpServers": {
+    "semgrep": {
+      "command": "semgrep",
+      "args": ["mcp"],
+      "env": {
+        "SEMGREP_RULES": "p/python p/security-audit p/flask p/xss p/owasp-top-ten"
+      }
+    }
+  }
+}
+
