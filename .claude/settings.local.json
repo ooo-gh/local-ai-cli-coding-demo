@@ -1,0 +1,19 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(python*)",
+      "Bash(pip*)",
+      "Bash(flask*)",
+      "Bash(sqlite3*)",
+      "Bash(cat*)",
+      "Bash(tree*)",
+      "Bash(ls*)",
+      "Bash(git*)",
+      "Bash(mkdir*)",
+      "mcp__plugin_semgrep-plugin_semgrep__semgrep_scan",
+      "WebFetch(domain:semgrep.dev)",
+      "WebFetch(domain:raw.githubusercontent.com)",
+      "WebFetch(domain:github.com)"
+    ]
+  }
+}
