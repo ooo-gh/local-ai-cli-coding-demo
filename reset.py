@@ -166,7 +166,7 @@ Add task management features to this app following the conventions in CLAUDE.md.
       "Bash(ls*)",
       "Bash(git*)",
       "Bash(mkdir*)",
-      "mcp__plugin_semgrep-plugin_semgrep__semgrep_scan",
+      "mcp__plugin_semgrep_guardian",
       "WebFetch(domain:semgrep.dev)",
       "WebFetch(domain:raw.githubusercontent.com)",
       "WebFetch(domain:github.com)"

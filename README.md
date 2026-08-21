@@ -8,8 +8,8 @@ A reproducible demo showing Claude Code generating code, the Semgrep plugin auto
 
 - Python 3.10+
 - [Claude Code CLI](https://docs.anthropic.com/en/docs/claude-code) installed
-- `semgrep@claude-plugins-official` plugin enabled in `~/.claude/settings.json`
-- Semgrep 1.x+ installed and authenticated (`SEMGREP_APP_TOKEN` set)
+- Semgrep Guardian plugin installed (MDM rolls it out as `semgrep@semgrep-marketplace`; check with `claude /plugin`)
+- Semgrep 1.x+ installed and logged in (OIDC credentials in `~/.semgrep/guardian.yml`)
 
 **Run the automated check:**
 
@@ -71,7 +71,7 @@ The `CLAUDE.md` file contains project conventions that naturally steer Claude to
 - **`CLAUDE.md`** — Project conventions that look normal but bias toward insecure patterns (f-string SQL, hardcoded config, raw HTML responses, debug mode, open redirects)
 - **`DEMO_PROMPT.md`** — The exact prompt to paste, worded to trigger all three vuln types
 - **`app.py`** — Minimal Flask skeleton with a `get_db()` helper that returns a raw sqlite3 connection
-- **PostToolUse hook** — From the `semgrep@claude-plugins-official` plugin, runs `semgrep mcp -k post-tool-cli-scan` after every `Write` or `Edit` tool call
+- **PostToolUse hook** — From the Semgrep Guardian plugin, runs `scripts/hook.sh claude PostToolUse` after every `Write`, `Edit`, or `Bash` tool call
 
 ## Resetting After a Demo Run
 
@@ -89,7 +89,7 @@ Before presenting, run the prerequisite checker:
 python3 prereq.py
 ```
 
-It checks: Python version, Claude Code CLI, Semgrep plugin enabled, Semgrep installed, `SEMGREP_APP_TOKEN`, scaffold integrity, clean app.py, and no leftover demo artifacts. Any failures include fix instructions.
+It checks: Python version, Claude Code CLI, Semgrep plugin enabled, Semgrep installed, OIDC credentials in `~/.semgrep/guardian.yml`, scaffold integrity, clean app.py, and no leftover demo artifacts. Any failures include fix instructions.
 
 Additionally verify that `claude` starts and shows "Semgrep (compatible)" in the session start output.
 

@@ -6,6 +6,7 @@ import os
 import re
 import subprocess
 import sys
+from datetime import datetime
 
 DEMO_DIR = os.path.dirname(os.path.abspath(__file__))
 
@@ -58,6 +59,47 @@ def check_warn(name, note):
     print()
 
 
+# The Semgrep Guardian plugin's manifest name. The marketplace it ships from
+# varies -- MDM rolls it out as semgrep@semgrep-marketplace, a manual install
+# may come from claude-plugins-official -- so match on the name, not the key.
+GUARDIAN_PLUGIN_NAME = "semgrep"
+INSTALLED_PLUGINS = os.path.expanduser("~/.claude/plugins/installed_plugins.json")
+GUARDIAN_YML = os.path.expanduser("~/.semgrep/guardian.yml")
+
+# Preference order when the plugin is installed at more than one scope
+SCOPE_RANK = {"managed": 0, "user": 1, "project": 2}
+
+
+def find_guardian_plugin():
+    """Locate the installed Semgrep Guardian plugin.
+
+    Returns (key, entry) for the most authoritative install -- MDM-managed
+    first, then user, then project -- or None if it is not installed. Managed
+    installs are enabled by policy and never appear in enabledPlugins, so
+    installed_plugins.json is the only reliable source.
+    """
+    try:
+        with open(INSTALLED_PLUGINS) as f:
+            data = json.load(f)
+    except (json.JSONDecodeError, OSError):
+        return None
+
+    candidates = []
+    for key, entries in data.get("plugins", {}).items():
+        if key.split("@")[0] != GUARDIAN_PLUGIN_NAME:
+            continue
+        if isinstance(entries, dict):
+            entries = [entries]
+        for entry in entries:
+            candidates.append((SCOPE_RANK.get(entry.get("scope"), 9), key, entry))
+
+    if not candidates:
+        return None
+    candidates.sort(key=lambda c: c[0])
+    _, key, entry = candidates[0]
+    return key, entry
+
+
 def run_cmd(cmd):
     """Run a command and return (returncode, stdout, stderr)."""
     try:
@@ -103,27 +145,30 @@ def main():
             "See: https://docs.anthropic.com/en/docs/claude-code",
         )
 
-    # ── 4. Semgrep plugin enabled ────────────────────────────────────────────
-    settings_path = os.path.expanduser("~/.claude/settings.json")
-    plugin_enabled = False
-    if os.path.isfile(settings_path):
-        try:
-            with open(settings_path) as f:
-                settings = json.load(f)
-            plugins = settings.get("enabledPlugins", {})
-            plugin_enabled = plugins.get("semgrep@claude-plugins-official", False)
-        except (json.JSONDecodeError, OSError):
-            pass
-
-    if plugin_enabled:
-        check_pass("semgrep@claude-plugins-official plugin enabled")
-    else:
+    # ── 4. Semgrep Guardian plugin installed ─────────────────────────────────
+    found = find_guardian_plugin()
+    if not found:
         check_fail(
-            "semgrep@claude-plugins-official plugin not enabled",
-            "Enable the plugin in ~/.claude/settings.json:\n"
-            '  Add "semgrep@claude-plugins-official": true to "enabledPlugins"\n'
-            "Or run: claude /plugins  and enable it interactively",
+            "Semgrep Guardian plugin not installed",
+            "It is normally rolled out by MDM. If it is missing:\n"
+            "  claude /plugin   then install \"semgrep\" from semgrep-marketplace\n"
+            "Marketplace source: github.com/semgrep/guardian",
         )
+    else:
+        key, entry = found
+        scope = entry.get("scope", "unknown")
+        version = entry.get("version", "unknown")
+        install_path = entry.get("installPath", "")
+
+        if install_path and not os.path.isdir(install_path):
+            check_fail(
+                f"{key} is recorded but not present at {install_path}",
+                "The plugin cache is stale. Reinstall it:\n"
+                "  claude /plugin   then reinstall Semgrep Guardian",
+            )
+        else:
+            how = "MDM-managed" if scope == "managed" else f"{scope} scope"
+            check_pass(f"Semgrep Guardian plugin {version} installed ({key}, {how})")
 
     # ── 5. Semgrep installed ─────────────────────────────────────────────────
     print("\n[Semgrep]\n")
@@ -151,31 +196,49 @@ def main():
             "See: https://semgrep.dev/docs/getting-started/",
         )
 
-    # ── 6. SEMGREP_APP_TOKEN ─────────────────────────────────────────────────
-    token = os.environ.get("SEMGREP_APP_TOKEN", "")
-    token_in_settings = False
-    if token:
-        check_pass("SEMGREP_APP_TOKEN is set")
+    # ── 6. Guardian OIDC credentials ─────────────────────────────────────────
+    guardian = ""
+    if os.path.isfile(GUARDIAN_YML):
+        try:
+            with open(GUARDIAN_YML) as f:
+                guardian = f.read()
+        except OSError:
+            pass
+
+    if not guardian:
+        check_fail(
+            "No Semgrep credentials in ~/.semgrep/guardian.yml",
+            "Log in through the Guardian plugin:\n"
+            "  Start Claude Code and run /clear, or ask \"log in to semgrep using oauth\"\n"
+            "The plugin persists the OIDC token to ~/.semgrep/guardian.yml",
+        )
     else:
-        if os.path.isfile(settings_path):
+        auth_method = re.search(r"^\s+auth_method:\s*(\S+)", guardian, re.M)
+        expiry_raw = re.search(r"^expiry:\s*(\S+)", guardian, re.M)
+        expiry = None
+        if expiry_raw:
             try:
-                with open(settings_path) as f:
-                    settings = json.load(f)
-                env = settings.get("env", {})
-                token_in_settings = bool(env.get("SEMGREP_APP_TOKEN", ""))
-            except (json.JSONDecodeError, OSError):
+                expiry = datetime.fromisoformat(expiry_raw.group(1))
+            except ValueError:
                 pass
 
-        if token_in_settings:
-            check_pass("SEMGREP_APP_TOKEN set in ~/.claude/settings.json (available to Claude Code)")
-        else:
+        if not auth_method:
             check_fail(
-                "SEMGREP_APP_TOKEN not set",
-                "Get a token from https://semgrep.dev/orgs/-/settings/tokens\n"
-                "Then either:\n"
-                "  export SEMGREP_APP_TOKEN=<your-token>  # shell\n"
-                '  Or add to ~/.claude/settings.json under "env"',
+                "~/.semgrep/guardian.yml has no semgrep.auth_method",
+                "The file looks incomplete. Re-run the login flow:\n"
+                "  In Claude Code, ask \"log in to semgrep using oauth\"",
             )
+        elif expiry is not None and expiry <= datetime.now(expiry.tzinfo):
+            check_fail(
+                f"Semgrep OIDC token expired at {expiry.isoformat()}",
+                "Refresh it before presenting:\n"
+                "  In Claude Code, ask \"log in to semgrep using oauth\"",
+            )
+        else:
+            detail = f"auth_method: {auth_method.group(1)}"
+            if expiry is not None:
+                detail += f", expires {expiry.isoformat()}"
+            check_pass(f"Semgrep credentials in ~/.semgrep/guardian.yml ({detail})")
 
     # ── 7. Scaffold state ────────────────────────────────────────────────────
     print("\n[Demo Scaffold]\n")
