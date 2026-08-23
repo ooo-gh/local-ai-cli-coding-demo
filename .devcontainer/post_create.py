@@ -203,6 +203,10 @@ def write_tmux_conf():
                 "set -g mouse on",
                 "setw -g mode-keys vi",
                 "set -sg escape-time 10",
+                # Claude Code prints a "tmux focus-events off" advisory into the
+                # session without this -- a warning line on the projector, and it
+                # cannot track focus to redraw when the presenter switches away.
+                "set -g focus-events on",
                 'set -g default-terminal "tmux-256color"',
                 'set -ag terminal-overrides ",xterm-256color:RGB"',
                 'set -as terminal-features ",xterm*:RGB"',
