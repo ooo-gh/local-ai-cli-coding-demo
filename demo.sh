@@ -7,6 +7,8 @@
 #   ./demo.sh --rebuild            force an image rebuild
 #   ./demo.sh --no-prefill         start Claude with an empty prompt box
 #   ./demo.sh --permission-mode manual   prompt for every tool call
+#                                  (default: bypassPermissions -- no prompts,
+#                                  so the container is the only boundary)
 #   ./demo.sh --reset-login        drop the persisted Claude login volume
 #   ./demo.sh --skip-checks        skip the in-container prereq.py run
 #
@@ -31,7 +33,7 @@ PROMPT_FILE="$REPO/DEMO_PROMPT.md"
 # moment it pastes, so a high ceiling costs nothing.
 READY_TIMEOUT="${DEMO_READY_TIMEOUT:-600}"
 
-PERMISSION_MODE="${DEMO_PERMISSION_MODE:-acceptEdits}"
+PERMISSION_MODE="${DEMO_PERMISSION_MODE:-bypassPermissions}"
 PREFILL=1
 REBUILD=0
 RESET_LOGIN=0
