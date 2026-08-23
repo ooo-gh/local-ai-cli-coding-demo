@@ -43,6 +43,12 @@ ENV DEVCONTAINER=true
 ENV EDITOR=nano
 ENV VISUAL=nano
 
+# tmux picks its UTF-8 mode from LC_ALL/LC_CTYPE/LANG. With none of them set it
+# runs the client in 8-bit mode and replaces every character it cannot emit with
+# "_", which turns the Claude Code banner and its status-line glyphs into rows of
+# underscores. The base image ships C.utf8, it just never selects it.
+ENV LANG=C.UTF-8
+
 USER vscode
 ENV PATH="/home/vscode/.local/bin:$PATH"
 

@@ -90,8 +90,26 @@ fi
 # ── Bring the container up ──────────────────────────────────────────────────
 
 if (( RESET_LOGIN )); then
-  warn "removing volume $CLAUDE_VOLUME -- you will have to run 'claude auth login' again"
-  docker volume rm "$CLAUDE_VOLUME" >/dev/null 2>&1 || true
+  # Order matters, and so does not hiding the error. `docker volume rm` refuses
+  # while any container -- running or merely stopped -- still has the volume
+  # mounted, so removing it before `devcontainer up` tears the old container down
+  # fails on every re-run. Swallowed, that silently keeps the previous login and
+  # --reset-login becomes a no-op: the exact opposite of what it promises.
+  holders="$(docker ps -aq --filter "volume=$CLAUDE_VOLUME")"
+  if [[ -n "$holders" ]]; then
+    info "removing containers holding $CLAUDE_VOLUME"
+    # Unquoted on purpose: one id per line, and `set -u` is covered by the -n test.
+    # shellcheck disable=SC2086
+    docker rm -f $holders >/dev/null || die "could not remove containers using $CLAUDE_VOLUME"
+  fi
+
+  if docker volume inspect "$CLAUDE_VOLUME" >/dev/null 2>&1; then
+    warn "removing volume $CLAUDE_VOLUME -- you will have to log in to Claude again"
+    docker volume rm "$CLAUDE_VOLUME" >/dev/null \
+      || die "could not remove $CLAUDE_VOLUME -- something still has it mounted"
+  else
+    info "volume $CLAUDE_VOLUME is already gone -- nothing to reset"
+  fi
 fi
 
 # Always recreate the container, never reuse. It costs a few seconds (the image
@@ -141,7 +159,9 @@ claude_cmd="claude --permission-mode $(printf '%q' "$PERMISSION_MODE")"
 wrapped="${claude_cmd}; printf '\n[demo] Claude exited. Container shell -- git diff, python3 reset.py, exit.\n'; exec bash -l"
 
 info "starting Claude Code (permission mode: $PERMISSION_MODE)"
-cexec tmux new-session -d -s "$SESSION" -x "$cols" -y "$lines" "$wrapped"
+# -u forces UTF-8 output even if tmux's own locale check comes up short; the
+# image sets LANG for the same reason, and either alone is sufficient.
+cexec tmux -u new-session -d -s "$SESSION" -x "$cols" -y "$lines" "$wrapped"
 
 # ── Pre-fill the prompt ─────────────────────────────────────────────────────
 
@@ -175,16 +195,23 @@ PY
   # past the attach lets you log in yourself and still get the prompt filled in
   # the moment the box appears.
   #
-  # Two details learned the hard way:
+  # Three details learned the hard way:
   #   - capture-pane needs -S - : Claude Code draws into scrollback, so the
   #     visible-screen-only capture comes back blank.
   #   - paste twice : the first bracketed paste collapses to a
   #     "[Pasted text #1 +5 lines]" placeholder, the second expands it to the
   #     full text. Same content both times, so nothing is duplicated -- and an
   #     expanded prompt is the point when it is going up on a projector.
+  #   - match on the input box, not on a hint : this waited for "for shortcuts",
+  #     but that hint shares its slot with others ("install gh for PR status",
+  #     ...), so on a launch that drew a different one the poller spun out its
+  #     whole timeout and the box stayed empty. The prompt char and the
+  #     permission-mode line are structural, so match either of those, and say
+  #     so on the way out if neither ever shows up.
   poller=$(printf '
     for _ in $(seq %d); do
-      if tmux capture-pane -p -S - -t %s 2>/dev/null | grep -q "for shortcuts"; then
+      if tmux capture-pane -p -S - -t %s 2>/dev/null \
+           | grep -q -e "shift+tab to cycle" -e "❯"; then
         tmux paste-buffer -b demo-prompt -t %s -p
         sleep 1
         tmux paste-buffer -b demo-prompt -t %s -p -d
@@ -192,7 +219,8 @@ PY
       fi
       sleep 1
     done
-  ' "$READY_TIMEOUT" "$SESSION" "$SESSION" "$SESSION")
+    tmux display-message -t %s "[demo] prompt pre-fill timed out -- paste it with: tmux paste-buffer -b demo-prompt -p"
+  ' "$READY_TIMEOUT" "$SESSION" "$SESSION" "$SESSION" "$SESSION")
 
   docker exec -d -u vscode "$CID" bash -c "$poller"
   info "prompt will appear in the input box shortly -- press Enter to send it"
@@ -204,4 +232,4 @@ fi
 
 info "attaching (C-b d to detach without stopping the session)"
 exec docker exec -it -u vscode -e TERM="${TERM:-xterm-256color}" "$CID" \
-  tmux attach -t "$SESSION"
+  tmux -u attach -t "$SESSION"
