@@ -13,7 +13,8 @@
       "mcp__plugin_semgrep_guardian",
       "WebFetch(domain:semgrep.dev)",
       "WebFetch(domain:raw.githubusercontent.com)",
-      "WebFetch(domain:github.com)"
+      "WebFetch(domain:github.com)",
+      "Bash(docker exec *)"
     ]
   }
 }
