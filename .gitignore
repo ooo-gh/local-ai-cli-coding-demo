@@ -1,0 +1,10 @@
+# This repo's devcontainer is part of the demo, not local scratch, so it has to
+# be committable. Re-included here because a global excludesfile may ignore
+# .devcontainer/ -- a repo .gitignore outranks the global one, and the directory
+# itself must be un-ignored before anything inside it can be added.
+!.devcontainer/
+
+# Demo run artifacts
+taskboard.db
+__pycache__/
+*.pyc
