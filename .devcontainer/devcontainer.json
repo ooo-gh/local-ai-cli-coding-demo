@@ -9,6 +9,26 @@
   },
   "init": true,
 
+  // The demo runs Claude Code with permission prompts suppressed, so the
+  // container is the only thing standing between a derailed turn and the host.
+  // Tighten what it can do:
+  //   --cap-drop=ALL          the default 14 capabilities (NET_RAW, MKNOD,
+  //                           SYS_CHROOT, ...) are all unused here.
+  //   --security-opt=...      no setuid binary can raise privileges, which also
+  //                           disables sudo -- deliberate, and the NOPASSWD
+  //                           sudoers entry is removed in the Dockerfile too.
+  // This is blast-radius reduction, not a security boundary: /workspace and
+  // ~/.semgrep are read-write binds of real host paths and egress is
+  // unrestricted, so a hostile prompt still reaches both.
+  //
+  // On a Linux host, updateRemoteUserUID below wants CHOWN/FOWNER/SETUID/SETGID
+  // to remap the vscode user -- add them back there. On macOS it is a no-op
+  // (the container stays uid 1000) and the caps are genuinely unneeded.
+  "runArgs": [
+    "--cap-drop=ALL",
+    "--security-opt=no-new-privileges"
+  ],
+
   // Colima only shares $HOME with the VM, so every bind source below must live
   // under the host home directory -- a mount from /tmp silently comes up empty.
   "workspaceMount": "source=${localWorkspaceFolder},target=/workspace,type=bind,consistency=delegated",

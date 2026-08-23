@@ -35,7 +35,13 @@ def log(msg):
 
 
 def fix_ownership():
-    """The named volume can come up root-owned on first mount.
+    """Last-resort check that the named volume is ours to write.
+
+    The image pre-creates /home/vscode/.claude as vscode, so Docker initialises a
+    fresh volume vscode-owned and there is normally nothing to do here. The
+    container runs with --cap-drop=ALL and no-new-privileges, so if a volume does
+    somehow come up root-owned there is no way to repair it from inside -- say so
+    plainly instead of leaving Claude Code to fail on an unwritable config.
 
     Deliberately limited to CONFIG, the volume this container owns. ~/.semgrep is
     a bind mount of the presenter's real credential directory on the host -- we
@@ -46,14 +52,13 @@ def fix_ownership():
     if not CONFIG.exists() or CONFIG.stat().st_uid == uid:
         return
     try:
-        subprocess.run(
-            ["sudo", "chown", "-R", f"{uid}:{gid}", str(CONFIG)],
-            check=True,
-            capture_output=True,
-        )
+        os.chown(CONFIG, uid, gid)
         log(f"fixed ownership: {CONFIG}")
-    except (OSError, subprocess.CalledProcessError) as e:
-        log(f"warning: could not chown {CONFIG}: {e}")
+    except OSError as e:
+        log(f"ERROR: {CONFIG} is owned by uid {CONFIG.stat().st_uid}, not {uid}, "
+            f"and cannot be chowned ({e}).")
+        log("ERROR: Claude Code will not be able to write its config. Recreate "
+            "the volume:  docker volume rm taskboard-demo-claude")
 
 
 def sync_from_seed():

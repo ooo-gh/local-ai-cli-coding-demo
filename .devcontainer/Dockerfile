@@ -39,6 +39,13 @@ COPY --from=uv /uv /usr/local/bin/uv
 # write to both (build-time plugin seed, runtime bind mount).
 RUN mkdir -p /opt/claude-seed /workspace && chown vscode:vscode /opt/claude-seed /workspace
 
+# devcontainers/base ships "vscode ALL=(root) NOPASSWD:ALL", which makes root a
+# single command away and undoes most of the point of dropping capabilities.
+# no-new-privileges in devcontainer.json already neuters sudo; removing the grant
+# as well means it is gone whether or not the run args are in effect. Nothing in
+# the demo path needs root at runtime.
+RUN rm -f /etc/sudoers.d/vscode
+
 ENV DEVCONTAINER=true
 ENV EDITOR=nano
 ENV VISUAL=nano
@@ -67,6 +74,12 @@ RUN uv tool install semgrep
 ENV CLAUDE_SEED_DIR=/opt/claude-seed
 RUN CLAUDE_CONFIG_DIR="$CLAUDE_SEED_DIR" claude plugin marketplace add anthropics/claude-plugins-official && \
     CLAUDE_CONFIG_DIR="$CLAUDE_SEED_DIR" claude plugin install semgrep@claude-plugins-official --scope user --yes
+
+# Pre-create the ~/.claude mountpoint as vscode. When Docker initialises a fresh
+# named volume it copies the image directory's ownership along with its contents,
+# so the volume comes up vscode-owned and needs no runtime chown -- which matters
+# now that neither sudo nor CAP_CHOWN is available to perform one.
+RUN mkdir -p /home/vscode/.claude
 
 COPY --chown=vscode:vscode post_create.py /opt/post_create.py
 
