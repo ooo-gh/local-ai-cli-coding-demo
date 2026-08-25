@@ -59,18 +59,15 @@ hook uses. The hook blocks on **any** severity, INFO included.
 | Disabled TLS Verification | notification via `ssl._create_unverified_context()` | `unverified-ssl-context` | ERROR |
 | SQL Injection | `f"SELECT ... WHERE title LIKE '%{query}%'"` | `tainted-sql-string` (flask + django variants) | ERROR ×2 |
 
-**Total:** 9-11 findings on the first pass across 7-8 vuln classes. The first three come
-from the scaffold, so they land the moment Claude touches `app.py` at all; the next four
-are pattern-matched off a specific construct each convention names outright. Only SQL
-injection is taint-based and depends on Claude choosing the f-string — treat it as the
-bonus, not the backbone.
+**Total:** 9-11 findings on the first pass across 7-8 classes. The first three come from the
+scaffold and land the moment Claude touches `app.py`; the next four are pattern-matched off a
+construct each convention names outright. Only SQL injection is taint-based and depends on
+Claude choosing the f-string — treat it as the bonus, not the backbone.
 
-**Rules that do NOT exist in `guardian-default`** — don't build a demo beat on them:
-open redirect (in any form, including a real `redirect(request.args[...])`), Python XSS
-sinks (`make_response()` with concatenated HTML is silent), path traversal via
-`open()`/`send_file()`, `os.system`/`os.popen` with concatenation, `eval`, SSRF, Flask
-wildcard CORS (that rule is FastAPI-only), and plain `hashlib.md5` (there is a `sha1`
-rule, but no stdlib md5 one).
+**Rules that do NOT exist in `guardian-default`** — don't build a demo beat on them: open
+redirect (in any form), Python XSS sinks (`make_response()` with concatenated HTML is
+silent), path traversal, `os.system`/`os.popen`, `eval`, SSRF, Flask wildcard CORS
+(FastAPI-only), and `hashlib.md5` (there is a `sha1` rule, but no stdlib md5 one).
 
 ### Demo Flow
 
@@ -114,17 +111,15 @@ Additionally verify that `claude` starts and shows "Semgrep (compatible)" in the
 
 **Hook doesn't fire:** Write a test file with `password = "test"` in Claude Code and check if Semgrep blocks it. If not, verify the plugin is enabled in `~/.claude/settings.json`.
 
-**Claude writes secure code anyway:** The `CLAUDE.md` conventions are designed to steer toward insecure patterns, but Claude may still write secure code for some categories — SQL injection most often, since parameterizing is the reflex. That's a valid demo outcome ("Semgrep silently confirms secure code"), and the four findings in the scaffold (`SECRET_KEY`, both cookie flags, `debug=True`) land regardless, because the hook reports every finding in a file Claude touches, not just the lines it changed.
+**Claude writes secure code anyway:** Possible for some categories — SQL injection most often, since parameterizing is the reflex. That's still a valid outcome ("Semgrep silently confirms secure code"), and the four scaffold findings (`SECRET_KEY`, both cookie flags, `debug=True`) land regardless: the hook reports every finding in a file Claude touches, not just the lines it changed.
 
-**Semgrep misses a vuln:** Eight classes are targeted so a miss doesn't cost the demo. Before presenting, sanity-check the slate against the live ruleset — rules get retired and the table above is only true as of the last verification:
+**Semgrep misses a vuln:** Eight classes are targeted, so one miss doesn't cost the demo. Rules do get retired, though — sanity-check the table above against the live ruleset before presenting, by running this on a finished demo run (before `reset.py`):
 
 ```bash
-TOKEN=$(sed -n 's/^api_token: //p' ~/.semgrep/settings.yml)   # portable; macOS grep has no -P
+TOKEN=$(sed -n 's/^api_token: //p' ~/.semgrep/settings.yml)   # macOS grep has no -P
 curl -sS -H "Authorization: Bearer $TOKEN" \
   https://semgrep.dev/c/p/guardian-default -o /tmp/guardian-default.yaml
 semgrep scan --config /tmp/guardian-default.yaml app.py templates/
 ```
 
-Run that against a completed demo run (before `reset.py`) and confirm the findings still
-match. `--config p/guardian-default` fetches to a temp file that's deleted on exit, so
-pull the ruleset down explicitly if you want to inspect it.
+Pulling the ruleset down explicitly is what lets you inspect it — `--config p/guardian-default` fetches to a temp file that's deleted on exit.
