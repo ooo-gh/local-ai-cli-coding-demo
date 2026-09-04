@@ -81,15 +81,29 @@ The `CLAUDE.md` file contains project conventions that naturally steer Claude to
 
 ### Expected Vulnerability Cycle
 
-| Vuln | What Claude Writes | Semgrep Rule | Severity |
-|------|-------------------|--------------|----------|
-| SQL Injection | `f"SELECT ... WHERE title LIKE '%{query}%'"` | `tainted-sql-string` | CRITICAL |
-| Hardcoded Secret | `app.config['SECRET_KEY'] = '...'` | `avoid_hardcoded_config_SECRET_KEY` | ERROR |
-| XSS | `make_response('<html>...' + task['body'])` | `raw-html-format`, `make-response-with-unknown-content` | WARNING |
-| Debug Enabled | `app.run(debug=True)` | `debug-enabled` | WARNING |
-| Open Redirect | Unvalidated `?next=` param rendered as link href | `open-redirect` | WARNING |
+Every rule below was verified to fire against the same `guardian-default` ruleset the
+hook uses. The hook blocks on **any** severity, INFO included.
 
-**Total:** 5-10 findings on first write, across up to 5 vuln classes.
+| Vuln | Where it comes from | Semgrep rule | Severity |
+|------|--------------------|--------------|----------|
+| Hardcoded Secret | scaffold `app.config['SECRET_KEY'] = '...'` | `avoid_hardcoded_config_SECRET_KEY` | ERROR |
+| Debug Enabled | scaffold `app.run(debug=True)` | `debug-enabled` | WARNING |
+| Insecure Session Cookie | scaffold `SESSION_COOKIE_SECURE/HTTPONLY = False` | `flask-cookie-app-config-secure-false`, `-httponly-false` | INFO ×2 |
+| Command Injection | export shells out with `subprocess.run(..., shell=True)` | `subprocess-shell-true` | ERROR |
+| Insecure Deserialization | snapshot import via `pickle.loads()` | `avoid-pickle` | WARNING |
+| XSS | `{% autoescape false %}` in `templates/task_detail.html` | `template-autoescape-off` | WARNING |
+| Disabled TLS Verification | notification via `ssl._create_unverified_context()` | `unverified-ssl-context` | ERROR |
+| SQL Injection | `f"SELECT ... WHERE title LIKE '%{query}%'"` | `tainted-sql-string` (flask + django variants) | ERROR ×2 |
+
+**Total:** 9-11 findings on the first pass across 7-8 classes. The first three come from the
+scaffold and land the moment Claude touches `app.py`; the next four are pattern-matched off a
+construct each convention names outright. Only SQL injection is taint-based and depends on
+Claude choosing the f-string — treat it as the bonus, not the backbone.
+
+**Rules that do NOT exist in `guardian-default`** — don't build a demo beat on them: open
+redirect (in any form), Python XSS sinks (`make_response()` with concatenated HTML is
+silent), path traversal, `os.system`/`os.popen`, `eval`, SSRF, Flask wildcard CORS
+(FastAPI-only), and `hashlib.md5` (there is a `sha1` rule, but no stdlib md5 one).
 
 ### Demo Flow
 
@@ -97,15 +111,15 @@ The `CLAUDE.md` file contains project conventions that naturally steer Claude to
 2. **[0:30] Open Claude Code** — SessionStart hook confirms Semgrep is active
 3. **[1:00] Paste the prompt** — read it aloud, emphasize it's a normal feature request
 4. **[1:30] Claude writes `app.py`** — hook fires and **blocks with findings**. This is the "aha" moment.
-5. **[2:30] Claude auto-fixes** — parameterized queries, `os.environ.get()`, `html.escape()` / `render_template()`, `debug=False`. Hook passes.
-6. **[3:30] Claude writes templates** — scans pass silently
+5. **[2:30] Claude auto-fixes** — parameterized queries, `os.environ.get()`, `secure=True`/`httponly=True`, `subprocess.run([...])` without a shell, JSON instead of `pickle`, a verified TLS context, `debug=False`. Hook passes.
+6. **[3:30] Claude writes `templates/task_detail.html`** — the hook fires again on `{% autoescape false %}`, which makes the point that this is not a Python-only linter
 7. **[4:00] Done** — Claude provides a security summary
-8. **[4:30] Talking points** — up to 5 vuln classes caught and fixed, zero human intervention, works on every file write
+8. **[4:30] Talking points** — 7-8 vuln classes caught and fixed, zero human intervention, works on every file write
 
 ## How It Works
 
-- **`CLAUDE.md`** — Project conventions that look normal but bias toward insecure patterns (f-string SQL, hardcoded config, raw HTML responses, debug mode, open redirects)
-- **`DEMO_PROMPT.md`** — The exact prompt to paste, worded to trigger all three vuln types
+- **`CLAUDE.md`** — Project conventions that look normal but bias toward insecure patterns (f-string SQL, hardcoded config, autoescape off in the detail template, `pickle` snapshots, a shelled-out export, an unverified TLS context, debug mode). Each convention states the vuln class it produces
+- **`DEMO_PROMPT.md`** — The exact prompt to paste, worded so each feature request lands on one of those conventions
 - **`app.py`** — Minimal Flask skeleton with a `get_db()` helper that returns a raw sqlite3 connection
 - **PostToolUse hook** — From the Semgrep Guardian plugin, runs `scripts/hook.sh claude PostToolUse` after every `Write`, `Edit`, or `Bash` tool call
 - **`demo.sh`** — Launcher: `devcontainer up`, then Claude Code under tmux, then a bracketed paste of the prompt so it lands in the input box unsubmitted
@@ -139,6 +153,15 @@ Additionally verify that `claude` starts and shows "Semgrep (compatible)" in the
 
 **Hook doesn't fire:** Write a test file with `password = "test"` in Claude Code and check if Semgrep blocks it. If not, verify the plugin is enabled in `~/.claude/settings.json`.
 
-**Claude writes secure code anyway:** The `CLAUDE.md` conventions are designed to steer toward insecure patterns, but Claude may still write secure code for some categories (especially SQL injection). This is actually a valid demo outcome ("Semgrep silently confirms secure code"). The hardcoded secret and debug mode are nearly guaranteed since they're in the scaffold already.
+**Claude writes secure code anyway:** Possible for some categories — SQL injection most often, since parameterizing is the reflex. That's still a valid outcome ("Semgrep silently confirms secure code"), and the four scaffold findings (`SECRET_KEY`, both cookie flags, `debug=True`) land regardless: the hook reports every finding in a file Claude touches, not just the lines it changed.
 
-**Semgrep misses a vuln:** Multiple vuln classes are targeted so even if one is missed, the others still demonstrate the concept.
+**Semgrep misses a vuln:** Eight classes are targeted, so one miss doesn't cost the demo. Rules do get retired, though — sanity-check the table above against the live ruleset before presenting, by running this on a finished demo run (before `reset.py`):
+
+```bash
+TOKEN=$(sed -n 's/^api_token: //p' ~/.semgrep/settings.yml)   # macOS grep has no -P
+curl -sS -H "Authorization: Bearer $TOKEN" \
+  https://semgrep.dev/c/p/guardian-default -o /tmp/guardian-default.yaml
+semgrep scan --config /tmp/guardian-default.yaml app.py templates/
+```
+
+Pulling the ruleset down explicitly is what lets you inspect it — `--config p/guardian-default` fetches to a temp file that's deleted on exit.

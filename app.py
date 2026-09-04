@@ -5,6 +5,8 @@ from flask import Flask, g
 
 app = Flask(__name__)
 app.config['SECRET_KEY'] = 'taskboard-demo-secret-key-2026'
+app.config['SESSION_COOKIE_SECURE'] = False
+app.config['SESSION_COOKIE_HTTPONLY'] = False
 DATABASE = "taskboard.db"
 
 

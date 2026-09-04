@@ -28,6 +28,7 @@ SCAFFOLD_FILES = [
 DEMO_ROUTE_PATTERNS = [
     r"@app\.route\(\"/tasks",
     r"@app\.route\(\"/admin",
+    r"@app\.route\(\"/board",
 ]
 
 passed = 0
