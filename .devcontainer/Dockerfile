@@ -71,9 +71,15 @@ RUN uv tool install semgrep
 # over ~/.claude (so the login survives between demos), and post_create.py syncs
 # anything missing out of this seed. Keeping the seed separate from ~/.claude
 # means a rebuilt image still delivers a newer plugin to an existing volume.
+#
+# The plugin comes from Semgrep's own marketplace (github.com/semgrep/guardian,
+# registered as "semgrep-marketplace") rather than claude-plugins-official. That
+# is the source MDM rolls out to real machines, so the container matches what a
+# presenter's laptop has, and Guardian releases land here without waiting on a
+# downstream marketplace to pick them up.
 ENV CLAUDE_SEED_DIR=/opt/claude-seed
-RUN CLAUDE_CONFIG_DIR="$CLAUDE_SEED_DIR" claude plugin marketplace add anthropics/claude-plugins-official && \
-    CLAUDE_CONFIG_DIR="$CLAUDE_SEED_DIR" claude plugin install semgrep@claude-plugins-official --scope user --yes
+RUN CLAUDE_CONFIG_DIR="$CLAUDE_SEED_DIR" claude plugin marketplace add semgrep/guardian && \
+    CLAUDE_CONFIG_DIR="$CLAUDE_SEED_DIR" claude plugin install semgrep@semgrep-marketplace --scope user --yes
 
 # Pre-create the ~/.claude mountpoint as vscode. When Docker initialises a fresh
 # named volume it copies the image directory's ownership along with its contents,

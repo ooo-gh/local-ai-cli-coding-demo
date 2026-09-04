@@ -59,9 +59,10 @@ def check_warn(name, note):
     print()
 
 
-# The Semgrep Guardian plugin's manifest name. The marketplace it ships from
-# varies -- MDM rolls it out as semgrep@semgrep-marketplace, a manual install
-# may come from claude-plugins-official -- so match on the name, not the key.
+# The Semgrep Guardian plugin's manifest name. It ships from Semgrep's own
+# marketplace (github.com/semgrep/guardian) as semgrep@semgrep-marketplace, both
+# via MDM and in the demo container -- but match on the name, not the key, so a
+# plugin installed from some other marketplace still satisfies the check.
 GUARDIAN_PLUGIN_NAME = "semgrep"
 INSTALLED_PLUGINS = os.path.expanduser("~/.claude/plugins/installed_plugins.json")
 GUARDIAN_YML = os.path.expanduser("~/.semgrep/guardian.yml")

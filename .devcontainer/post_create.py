@@ -27,7 +27,10 @@ from pathlib import Path
 
 SEED = Path(os.environ.get("CLAUDE_SEED_DIR", "/opt/claude-seed"))
 CONFIG = Path(os.environ.get("CLAUDE_CONFIG_DIR", str(Path.home() / ".claude")))
-GUARDIAN_PLUGIN = "semgrep@claude-plugins-official"
+# Manifest key for the plugin, "<name>@<marketplace>". The Dockerfile installs
+# from Semgrep's own marketplace (github.com/semgrep/guardian), so the key is
+# semgrep@semgrep-marketplace -- matching what MDM rolls out to real machines.
+GUARDIAN_PLUGIN = "semgrep@semgrep-marketplace"
 
 
 def log(msg):

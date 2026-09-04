@@ -8,7 +8,9 @@ A reproducible demo showing Claude Code generating code, the Semgrep plugin auto
 
 - Python 3.10+
 - [Claude Code CLI](https://docs.anthropic.com/en/docs/claude-code) installed
-- Semgrep Guardian plugin installed (MDM rolls it out as `semgrep@semgrep-marketplace`; check with `claude /plugin`)
+- Semgrep Guardian plugin installed from Semgrep's marketplace, [github.com/semgrep/guardian](https://github.com/semgrep/guardian)
+  — MDM rolls it out as `semgrep@semgrep-marketplace`; check with `claude /plugin`, or add it by hand with
+  `claude plugin marketplace add semgrep/guardian && claude plugin install semgrep@semgrep-marketplace`
 - Semgrep 1.x+ installed and logged in (OIDC credentials in `~/.semgrep/guardian.yml`)
 
 **Run the automated check:**
