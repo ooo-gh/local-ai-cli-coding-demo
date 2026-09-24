@@ -302,8 +302,8 @@ def main():
         print(f"\n\033[32mAll {total} checks passed. Demo is ready!\033[0m")
         print("\nNext steps:")
         print(f"  cd {DEMO_DIR}")
-        print("  claude")
-        print("  # Paste the prompt from DEMO_PROMPT.md")
+        print("  ./demo.sh    # launches Claude Code in the devcontainer with the prompt prefilled")
+        print("\n  Or, without the container: run `claude` here and paste the prompt from DEMO_PROMPT.md")
         return 0
     elif failed == 0:
         print(f"\n\033[33m{passed} passed, {warnings} warning(s). Demo can run but review warnings above.\033[0m")

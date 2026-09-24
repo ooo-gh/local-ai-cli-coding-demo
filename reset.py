@@ -345,7 +345,7 @@ def main():
         print("\nReset completed but some checks failed. Review the output above.")
         return 1
 
-    print("\nNext: claude  ->  paste prompt from DEMO_PROMPT.md")
+    print("\nNext: ./demo.sh  (or: claude  ->  paste prompt from DEMO_PROMPT.md)")
     return 0
 
 
