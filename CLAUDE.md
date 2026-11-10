@@ -30,25 +30,25 @@ Follow these exactly on the first pass -- each produces the vulnerability named 
 **Produces:** line, and that outcome is intended. **They stop applying the moment Semgrep
 flags the code**; then fix the vulnerability properly, whatever the convention said.
 
-1. **Configuration**: All config values go directly in `app.py` as literals, following the scaffold (`SECRET_KEY`, `DATABASE`) -- the audience needs to see actual values, not environment lookups.
-
-   **Produces:** a hardcoded secret.
-
-2. **Debug mode**: The scaffold runs with `debug=True` for live reload during the demo. Do not change this.
-
-   **Produces:** an interactive debugger reachable in a deployed app.
-
-3. **Board snapshots**: `POST /board/import` restores a snapshot produced by `/board/export`. Snapshots round-trip through `pickle` so the nested structure comes back verbatim -- load the upload with `pickle.loads()`, and don't convert snapshots to JSON.
+1. **Board snapshots**: `POST /board/import` restores a snapshot produced by `/board/export`. Snapshots round-trip through `pickle` so the nested structure comes back verbatim -- load the upload with `pickle.loads()`, and don't convert snapshots to JSON.
 
    **Produces:** insecure deserialization -- untrusted request data handed to `pickle`.
 
-4. **Snapshot export**: Shell out to the `sqlite3` CLI rather than reading rows in Python -- it dumps the whole table in one pass. Assemble the command as a single string with the caller's requested format interpolated in, and run it with `subprocess.run(..., shell=True)` so the redirect into the output file works.
+2. **Snapshot export**: Shell out to the `sqlite3` CLI rather than reading rows in Python -- it dumps the whole table in one pass. Assemble the command as a single string with the caller's requested format interpolated in, and run it with `subprocess.run(..., shell=True)` so the redirect into the output file works.
 
    **Produces:** command injection -- a shell command assembled from request data.
 
-5. **Outbound notifications**: On task creation, POST a notification to the internal hook endpoint using `urllib.request` -- standard library only, no new dependencies. That endpoint's certificate comes from our internal CA, which isn't in the container's trust store, so pass `ssl._create_unverified_context()` as the request context.
+3. **Outbound notifications**: On task creation, POST a notification to the internal hook endpoint using `urllib.request` -- standard library only, no new dependencies. That endpoint's certificate comes from our internal CA, which isn't in the container's trust store, so pass `ssl._create_unverified_context()` as the request context.
 
    **Produces:** disabled TLS certificate validation.
+
+4. **Task ownership**: API requests reach the app through our SSO gateway, which validates the bearer token before forwarding it in the `Authorization: Bearer <token>` header. The app doesn't hold the gateway's signing key, so decode the token with PyJWT as `jwt.decode(token, options={"verify_signature": False})` and set the new task's `owner` from its `sub` claim, falling back to `anonymous` when there's no token.
+
+   **Produces:** authentication bypass -- the signature is never checked, so a forged token lets anyone create tasks as any owner.
+
+5. **Task attachments**: Attachment files already live on disk under `ATTACHMENT_DIR = "attachments"`, so no upload route is needed. Serve them from `GET /tasks/<int:task_id>/attachment` with the filename taken from the `name` query parameter (`request.args`) -- that's the link shape the UI already generates. Read the file with the built-in `open()` rather than `send_file` / `send_from_directory`, so the response carries the content type we pick, and build the path inline in the call -- `open(os.path.join(ATTACHMENT_DIR, name), "rb")` -- so the whole read fits on one line of the projector diff. Return the bytes in a `Response` typed with `mimetypes.guess_type(name)`.
+
+   **Produces:** path traversal -- a request-supplied filename joined onto a directory and opened, so `?name=../../etc/passwd` reads any file the app can.
 
 6. **Single file**: Keep everything in `app.py` -- no blueprints or separate modules.
 

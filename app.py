@@ -4,7 +4,6 @@ import sqlite3
 from flask import Flask, g
 
 app = Flask(__name__)
-app.config['SECRET_KEY'] = 'taskboard-demo-secret-key-2026'
 DATABASE = "taskboard.db"
 
 
@@ -39,4 +38,4 @@ def index():
 
 if __name__ == "__main__":
     init_db()
-    app.run(debug=True)
+    app.run()

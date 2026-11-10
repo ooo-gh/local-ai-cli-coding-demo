@@ -68,8 +68,9 @@ claude
 ### The Prompt
 
 The prompt lives in [`DEMO_PROMPT.md`](DEMO_PROMPT.md) (everything after the `---`). It asks
-for three features: a task list page, a create-task API that sends a notification, and
-board snapshot export/import.
+for five features: a task list page, a create-task API that sends a notification, board
+snapshot export/import, task ownership from the SSO bearer token, and task attachment
+downloads.
 
 ## What Happens
 
@@ -80,19 +81,26 @@ was written and hands the findings back, and Claude fixes them.
 ### Expected Vulnerability Cycle
 
 Every rule below fires against the `guardian-default` ruleset on a representative first pass,
-all in `app.py`. Each one is pattern-matched off a construct the scaffold or a convention
-names outright, so the count doesn't depend on Claude's style.
+all in `app.py`. Each one is pattern-matched off a construct a convention names outright,
+so the count doesn't depend on Claude's style.
 
 | Vuln | Where it comes from | Semgrep rule | Severity |
 |------|--------------------|--------------|----------|
-| Hardcoded Secret | scaffold `app.config['SECRET_KEY'] = '...'` | `avoid_hardcoded_config_SECRET_KEY` | ERROR |
-| Debug Enabled | scaffold `app.run(debug=True)` | `debug-enabled` | WARNING |
 | Command Injection | export shells out with `subprocess.run(..., shell=True)` | `subprocess-shell-true` | ERROR |
+| Command Injection | request data interpolated into that command | `subprocess-injection` | ERROR |
 | Insecure Deserialization | snapshot import via `pickle.loads()` | `avoid-pickle` | WARNING |
+| Insecure Deserialization | `pickle.loads()` on request data in a Flask route | `insecure-deserialization` | ERROR |
 | Disabled TLS Verification | notification via `ssl._create_unverified_context()` | `unverified-ssl-context` | ERROR |
+| Authentication Bypass | task owner read from `jwt.decode(..., options={"verify_signature": False})` | `unverified-jwt-decode` | ERROR |
+| Path Traversal | attachment read via `open(os.path.join(ATTACHMENT_DIR, name), "rb")` with `name` from `request.args` | `path-traversal-open` | ERROR |
 
-**Total:** 5 findings on the first pass. If Guardian reports only the lines Claude changed,
-the two scaffold findings drop out and you get 3.
+**Total:** 7 findings on the first pass.
+
+The path-traversal rule is a plain pattern match that follows at most one assignment from
+`request` to `open()`. `name = request.args.get(...)` followed by `open(os.path.join(DIR, name))`
+fires; adding a second hop (`path = os.path.join(DIR, name)`, then `open(path)`) or using
+`send_file(...)` instead of `open()` goes silent. That is why the attachments convention
+spells out the inline `open(os.path.join(...))` call.
 
 **Deliberately left out:**
 - **SQL injection.** One f-string query sets off four rules (`tainted-sql-string` ×2,
@@ -101,11 +109,20 @@ the two scaffold findings drop out and you get 3.
 - **Template XSS (`{% autoescape false %}`).** The rule fires locally, but the Stop hook
   didn't report it on a real run.
 - **Session cookie flags.** Neither cookie-flag rule fired on the scaffold.
+- **Hardcoded `SECRET_KEY` and `debug=True`.** These lived in the scaffold, which the prompt
+  never touches, so whether they were reported varied from run to run.
 
-**Rules that do NOT exist in `guardian-default`** — don't build a demo beat on them: open
-redirect (in any form), Python XSS sinks (`make_response()` with concatenated HTML is
-silent), path traversal, `os.system`/`os.popen`, `eval`, SSRF, Flask wildcard CORS
-(FastAPI-only), and `hashlib.md5` (there is a `sha1` rule, but no stdlib md5 one).
+**Other candidate beats, checked against `guardian-default` with Flask routes and `request.args` input:**
+- **Fire:** `os.system()` on request data (`os-system-injection`), `eval()` on request data
+  (`eval-injection` plus `eval-detected`), `requests.get()` on a request-supplied URL
+  (`ssrf-requests`), and `make_response()` with HTML concatenated from request data
+  (`raw-html-format`, reported twice). Path traversal fires too, but only in the shape
+  described above.
+- **Silent:** SSRF through `urllib.request.urlopen()` (the SSRF rule only knows `requests`),
+  a Flask open redirect (`redirect(request.args.get(...))`; the redirect rule in the set
+  is FastAPI-only), Flask-CORS with `origins="*"` (the wildcard-CORS rule is FastAPI-only),
+  and `hashlib.md5()` (the md5 rules cover the `cryptography` and `pycryptodome` libraries,
+  not `hashlib`).
 
 ### Demo Flow
 
@@ -114,12 +131,12 @@ silent), path traversal, `os.system`/`os.popen`, `eval`, SSRF, Flask wildcard CO
 3. **[1:00] Paste the prompt** — read it aloud, emphasize it's a normal feature request
 4. **[1:30] Claude writes the features** — edits to `app.py` and `templates/tasks.html`, then a short summary
 5. **[2:30] Turn ends, Guardian reports** — the Stop hook comes back with the findings. This is the "aha" moment.
-6. **[3:00] Claude fixes them** — `SECRET_KEY` from the environment, `subprocess.run([...])` without a shell, JSON instead of `pickle`, a verified TLS context, `debug=False`. The next scan comes back clean.
-7. **[4:00] Talking points** — five issues across four vulnerability classes, caught and fixed with no human intervention
+6. **[3:00] Claude fixes them** — `subprocess.run([...])` without a shell, JSON instead of `pickle`, a verified TLS context, the bearer token verified against the gateway's public keys (`jwt.PyJWKClient` plus `algorithms=["RS256"]`), and the attachment path resolved and rejected if it falls outside `ATTACHMENT_DIR` (or served with `send_from_directory`). The next scan comes back clean.
+7. **[4:00] Talking points** — seven issues across five vulnerability classes, caught and fixed with no human intervention
 
 ## How It Works
 
-- **`CLAUDE.md`** — Project conventions that look normal but bias toward insecure patterns (hardcoded config, debug mode, `pickle` snapshots, a shelled-out export, an unverified TLS context). Each convention states the vuln class it produces
+- **`CLAUDE.md`** — Project conventions that look normal but bias toward insecure patterns (`pickle` snapshots, a shelled-out export, an unverified TLS context, an unverified JWT, a request-supplied filename handed to `open()`). Each convention states the vuln class it produces
 - **`DEMO_PROMPT.md`** — The exact prompt to paste, worded so each feature request lands on one of those conventions
 - **`app.py`** — Minimal Flask skeleton with a `get_db()` helper that returns a raw sqlite3 connection
 - **Stop hook** — From the Semgrep Guardian plugin; scans the files Claude changed when the turn ends and feeds the findings back to Claude
