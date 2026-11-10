@@ -1,6 +1,6 @@
 # TaskBoard Demo: Claude Code + Semgrep Auto-Scan
 
-A reproducible demo showing Claude Code generating code, the Semgrep plugin automatically catching vulnerabilities via PostToolUse hooks, and Claude fixing them — all visible in the CLI.
+A reproducible demo showing Claude Code generating code, the Semgrep plugin automatically catching vulnerabilities when Claude's turn ends, and Claude fixing them — all visible in the CLI.
 
 **Audience:** Developers/engineers. **Duration:** 5-7 minutes.
 
@@ -49,6 +49,7 @@ fixes cycle uninterrupted, but still asks before anything other than an edit.
 ./demo.sh --rebuild                  force an image rebuild
 ./demo.sh --no-prefill               start with an empty prompt box
 ./demo.sh --permission-mode manual   prompt for every tool call
+./demo.sh --model <id>               model to launch with (default: claude-opus-5-5)
 ./demo.sh --reset-login              drop the persisted Claude login
 ./demo.sh --skip-checks              skip the in-container prereq.py run
 ```
@@ -66,62 +67,79 @@ claude
 
 ### The Prompt
 
-```
-Add task management features to this app following the conventions in CLAUDE.md. I need:
-
-1. A task list page at /tasks that shows all tasks, with a search box that filters by title directly in the database query (not client-side). Support a `?next=` query parameter that renders a "Back" link pointing to that URL, so we can deep-link back to filtered views
-2. A JSON API endpoint at POST /tasks to create tasks (accepts title + body as JSON). The body field accepts HTML formatting. Return the created task as JSON
-3. A task detail view at /tasks/<id> that renders the full task including its HTML body -- use the make_response() approach described in CLAUDE.md
-4. An admin endpoint at /admin/tasks (DELETE method) that checks the secret key from app config as the API key and can delete tasks by ID
-```
+The prompt lives in [`DEMO_PROMPT.md`](DEMO_PROMPT.md) (everything after the `---`). It asks
+for five features: a task list page, a create-task API that sends a notification, board
+snapshot export/import, task ownership from the SSO bearer token, and task attachment
+downloads.
 
 ## What Happens
 
-The `CLAUDE.md` file contains project conventions that naturally steer Claude toward insecure patterns. The Semgrep PostToolUse hook fires on every file write and blocks when it finds vulnerabilities. Claude then auto-fixes and rewrites until the scan passes.
+The `CLAUDE.md` file contains project conventions that naturally steer Claude toward insecure
+patterns. Claude writes the whole feature, then ends its turn. Guardian's Stop hook scans what
+was written and hands the findings back, and Claude fixes them.
 
 ### Expected Vulnerability Cycle
 
-Every rule below was verified to fire against the same `guardian-default` ruleset the
-hook uses. The hook blocks on **any** severity, INFO included.
+Every rule below fires against the `guardian-default` ruleset on a representative first pass,
+all in `app.py`. Each one is pattern-matched off a construct a convention names outright,
+so the count doesn't depend on Claude's style.
 
 | Vuln | Where it comes from | Semgrep rule | Severity |
 |------|--------------------|--------------|----------|
-| Hardcoded Secret | scaffold `app.config['SECRET_KEY'] = '...'` | `avoid_hardcoded_config_SECRET_KEY` | ERROR |
-| Debug Enabled | scaffold `app.run(debug=True)` | `debug-enabled` | WARNING |
-| Insecure Session Cookie | scaffold `SESSION_COOKIE_SECURE/HTTPONLY = False` | `flask-cookie-app-config-secure-false`, `-httponly-false` | INFO ×2 |
 | Command Injection | export shells out with `subprocess.run(..., shell=True)` | `subprocess-shell-true` | ERROR |
+| Command Injection | request data interpolated into that command | `subprocess-injection` | ERROR |
 | Insecure Deserialization | snapshot import via `pickle.loads()` | `avoid-pickle` | WARNING |
-| XSS | `{% autoescape false %}` in `templates/task_detail.html` | `template-autoescape-off` | WARNING |
+| Insecure Deserialization | `pickle.loads()` on request data in a Flask route | `insecure-deserialization` | ERROR |
 | Disabled TLS Verification | notification via `ssl._create_unverified_context()` | `unverified-ssl-context` | ERROR |
-| SQL Injection | `f"SELECT ... WHERE title LIKE '%{query}%'"` | `tainted-sql-string` (flask + django variants) | ERROR ×2 |
+| Authentication Bypass | task owner read from `jwt.decode(..., options={"verify_signature": False})` | `unverified-jwt-decode` | ERROR |
+| Path Traversal | attachment read via `open(os.path.join(ATTACHMENT_DIR, name), "rb")` with `name` from `request.args` | `path-traversal-open` | ERROR |
 
-**Total:** 9-11 findings on the first pass across 7-8 classes. The first three come from the
-scaffold and land the moment Claude touches `app.py`; the next four are pattern-matched off a
-construct each convention names outright. Only SQL injection is taint-based and depends on
-Claude choosing the f-string — treat it as the bonus, not the backbone.
+**Total:** 7 findings on the first pass.
 
-**Rules that do NOT exist in `guardian-default`** — don't build a demo beat on them: open
-redirect (in any form), Python XSS sinks (`make_response()` with concatenated HTML is
-silent), path traversal, `os.system`/`os.popen`, `eval`, SSRF, Flask wildcard CORS
-(FastAPI-only), and `hashlib.md5` (there is a `sha1` rule, but no stdlib md5 one).
+The path-traversal rule is a plain pattern match that follows at most one assignment from
+`request` to `open()`. `name = request.args.get(...)` followed by `open(os.path.join(DIR, name))`
+fires; adding a second hop (`path = os.path.join(DIR, name)`, then `open(path)`) or using
+`send_file(...)` instead of `open()` goes silent. That is why the attachments convention
+spells out the inline `open(os.path.join(...))` call.
+
+**Deliberately left out:**
+- **SQL injection.** One f-string query sets off four rules (`tainted-sql-string` ×2,
+  `formatted-sql-query`, `sqlalchemy-execute-raw-query`), and whether it appears at all
+  depends on whether Claude writes the f-string.
+- **Template XSS (`{% autoescape false %}`).** The rule fires locally, but the Stop hook
+  didn't report it on a real run.
+- **Session cookie flags.** Neither cookie-flag rule fired on the scaffold.
+- **Hardcoded `SECRET_KEY` and `debug=True`.** These lived in the scaffold, which the prompt
+  never touches, so whether they were reported varied from run to run.
+
+**Other candidate beats, checked against `guardian-default` with Flask routes and `request.args` input:**
+- **Fire:** `os.system()` on request data (`os-system-injection`), `eval()` on request data
+  (`eval-injection` plus `eval-detected`), `requests.get()` on a request-supplied URL
+  (`ssrf-requests`), and `make_response()` with HTML concatenated from request data
+  (`raw-html-format`, reported twice). Path traversal fires too, but only in the shape
+  described above.
+- **Silent:** SSRF through `urllib.request.urlopen()` (the SSRF rule only knows `requests`),
+  a Flask open redirect (`redirect(request.args.get(...))`; the redirect rule in the set
+  is FastAPI-only), Flask-CORS with `origins="*"` (the wildcard-CORS rule is FastAPI-only),
+  and `hashlib.md5()` (the md5 rules cover the `cryptography` and `pycryptodome` libraries,
+  not `hashlib`).
 
 ### Demo Flow
 
 1. **[0:00] Show the project** — `ls`, `cat app.py` (just a skeleton), `cat CLAUDE.md`
 2. **[0:30] Open Claude Code** — SessionStart hook confirms Semgrep is active
 3. **[1:00] Paste the prompt** — read it aloud, emphasize it's a normal feature request
-4. **[1:30] Claude writes `app.py`** — hook fires and **blocks with findings**. This is the "aha" moment.
-5. **[2:30] Claude auto-fixes** — parameterized queries, `os.environ.get()`, `secure=True`/`httponly=True`, `subprocess.run([...])` without a shell, JSON instead of `pickle`, a verified TLS context, `debug=False`. Hook passes.
-6. **[3:30] Claude writes `templates/task_detail.html`** — the hook fires again on `{% autoescape false %}`, which makes the point that this is not a Python-only linter
-7. **[4:00] Done** — Claude provides a security summary
-8. **[4:30] Talking points** — 7-8 vuln classes caught and fixed, zero human intervention, works on every file write
+4. **[1:30] Claude writes the features** — edits to `app.py` and `templates/tasks.html`, then a short summary
+5. **[2:30] Turn ends, Guardian reports** — the Stop hook comes back with the findings. This is the "aha" moment.
+6. **[3:00] Claude fixes them** — `subprocess.run([...])` without a shell, JSON instead of `pickle`, a verified TLS context, the bearer token verified against the gateway's public keys (`jwt.PyJWKClient` plus `algorithms=["RS256"]`), and the attachment path resolved and rejected if it falls outside `ATTACHMENT_DIR` (or served with `send_from_directory`). The next scan comes back clean.
+7. **[4:00] Talking points** — seven issues across five vulnerability classes, caught and fixed with no human intervention
 
 ## How It Works
 
-- **`CLAUDE.md`** — Project conventions that look normal but bias toward insecure patterns (f-string SQL, hardcoded config, autoescape off in the detail template, `pickle` snapshots, a shelled-out export, an unverified TLS context, debug mode). Each convention states the vuln class it produces
+- **`CLAUDE.md`** — Project conventions that look normal but bias toward insecure patterns (`pickle` snapshots, a shelled-out export, an unverified TLS context, an unverified JWT, a request-supplied filename handed to `open()`). Each convention states the vuln class it produces
 - **`DEMO_PROMPT.md`** — The exact prompt to paste, worded so each feature request lands on one of those conventions
 - **`app.py`** — Minimal Flask skeleton with a `get_db()` helper that returns a raw sqlite3 connection
-- **PostToolUse hook** — From the Semgrep Guardian plugin, runs `scripts/hook.sh claude PostToolUse` after every `Write`, `Edit`, or `Bash` tool call
+- **Stop hook** — From the Semgrep Guardian plugin; scans the files Claude changed when the turn ends and feeds the findings back to Claude
 - **`demo.sh`** — Launcher: `devcontainer up`, then Claude Code under tmux, then a bracketed paste of the prompt so it lands in the input box unsubmitted
 - **`.devcontainer/`** — Image with Claude Code, the Guardian plugin and the Semgrep CLI pre-installed. `~/.semgrep` is bind-mounted for the OIDC token; `~/.claude` is a named volume so the login survives between demos; the repo is bind-mounted at `/workspace`, so what Claude writes shows up in `git diff` on the host
 
@@ -151,11 +169,11 @@ Additionally verify that `claude` starts and shows "Semgrep (compatible)" in the
 
 ## Troubleshooting
 
-**Hook doesn't fire:** Write a test file with `password = "test"` in Claude Code and check if Semgrep blocks it. If not, verify the plugin is enabled in `~/.claude/settings.json`.
+**Hook doesn't fire:** Have Claude write a test file with `password = "test"` and end its turn; the Stop hook should report it. If not, verify the plugin is enabled in `~/.claude/settings.json`.
 
-**Claude writes secure code anyway:** Possible for some categories — SQL injection most often, since parameterizing is the reflex. That's still a valid outcome ("Semgrep silently confirms secure code"), and the four scaffold findings (`SECRET_KEY`, both cookie flags, `debug=True`) land regardless: the hook reports every finding in a file Claude touches, not just the lines it changed.
+**Claude writes secure code anyway:** Each convention names the exact insecure call, so this is rare. If it happens, that's still a valid outcome ("Semgrep silently confirms secure code").
 
-**Semgrep misses a vuln:** Eight classes are targeted, so one miss doesn't cost the demo. Rules do get retired, though — sanity-check the table above against the live ruleset before presenting, by running this on a finished demo run (before `reset.py`):
+**Semgrep misses a vuln:** Rules do get retired. Rules do get retired, though — sanity-check the table above against the live ruleset before presenting, by running this on a finished demo run (before `reset.py`):
 
 ```bash
 TOKEN=$(sed -n 's/^api_token: //p' ~/.semgrep/settings.yml)   # macOS grep has no -P

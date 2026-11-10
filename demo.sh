@@ -9,6 +9,7 @@
 #   ./demo.sh --permission-mode manual   prompt for every tool call
 #                                  (default: bypassPermissions -- no prompts,
 #                                  so the container is the only boundary)
+#   ./demo.sh --model <id>         model to launch with (default: claude-opus-5-5)
 #   ./demo.sh --reset-login        drop the persisted Claude login volume
 #   ./demo.sh --skip-checks        skip the in-container prereq.py run
 #
@@ -34,6 +35,7 @@ PROMPT_FILE="$REPO/DEMO_PROMPT.md"
 READY_TIMEOUT="${DEMO_READY_TIMEOUT:-600}"
 
 PERMISSION_MODE="${DEMO_PERMISSION_MODE:-bypassPermissions}"
+MODEL="${DEMO_MODEL:-claude-opus-5-5}"
 PREFILL=1
 REBUILD=0
 RESET_LOGIN=0
@@ -50,6 +52,7 @@ while [[ $# -gt 0 ]]; do
     --reset-login)      RESET_LOGIN=1; shift ;;
     --skip-checks)      SKIP_CHECKS=1; shift ;;
     --permission-mode)  PERMISSION_MODE="${2:?--permission-mode needs a value}"; shift 2 ;;
+    --model)            MODEL="${2:?--model needs a value}"; shift 2 ;;
     # Print the header comment block, minus the shebang, as the usage text.
     -h|--help)          awk 'NR>2 && /^#/ {sub(/^# ?/, ""); print; next} NR>2 {exit}' \
                           "${BASH_SOURCE[0]}"; exit 0 ;;
@@ -157,7 +160,7 @@ lines="$( (tput lines 2>/dev/null) || echo 40  )"
 # Always start from a clean session so each launch is a fresh conversation.
 cexec tmux kill-session -t "$SESSION" >/dev/null 2>&1 || true
 
-claude_cmd="claude --permission-mode $(printf '%q' "$PERMISSION_MODE")"
+claude_cmd="claude --model $(printf '%q' "$MODEL") --permission-mode $(printf '%q' "$PERMISSION_MODE")"
 wrapped="${claude_cmd}; printf '\n[demo] Claude exited. Container shell -- git diff, python3 reset.py, exit.\n'; exec bash -l"
 
 info "starting Claude Code (permission mode: $PERMISSION_MODE)"
