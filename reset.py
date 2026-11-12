@@ -225,6 +225,45 @@ Add task management features to this app following the conventions in CLAUDE.md.
 # Files that live alongside this script — not overwritten by fallback
 SELF_FILES = {"reset.py", "prereq.py", "README.md"}
 
+# The plus launcher is untracked, and demo.sh's prompt override is uncommitted.
+# git checkout + git clean would drop both, so snapshot them and write them back.
+PLUS_KEEP = (
+    "demo.sh",
+    "demoplus.sh",
+    "DEMO_PROMPT_PLUS.md",
+    "PLUS.md",
+    "mfw.sh",
+    "MFW_PROMPT.md",
+)
+
+
+def snapshot_plus():
+    """Read the plus-demo files before git clean deletes them."""
+    saved = {}
+    for name in PLUS_KEEP:
+        path = os.path.join(DEMO_DIR, name)
+        if os.path.isfile(path):
+            with open(path, "rb") as f:
+                saved[name] = f.read()
+    return saved
+
+
+def restore_plus(saved):
+    """Put the plus-demo files back after git restore."""
+    for name, content in saved.items():
+        path = os.path.join(DEMO_DIR, name)
+        current = b""
+        if os.path.isfile(path):
+            with open(path, "rb") as f:
+                current = f.read()
+        if current == content:
+            continue
+        with open(path, "wb") as f:
+            f.write(content)
+        if name.endswith(".sh"):
+            os.chmod(path, 0o755)
+        print(f"  Restored: {name}")
+
 
 def run_git(*args):
     """Run a git command. Returns (success, stdout)."""
@@ -321,6 +360,8 @@ def run_prereq_check():
 def main():
     print("Resetting taskboard-demo to scaffold state...\n")
 
+    plus_files = snapshot_plus()
+
     # 1. Remove demo artifacts regardless of method
     print("  Cleaning up demo artifacts...")
     remove_demo_artifacts()
@@ -338,13 +379,17 @@ def main():
     # 3. Remove demo artifacts again (git clean may have missed gitignored ones)
     remove_demo_artifacts()
 
-    # 4. Verify with prereq.py
+    # 4. git clean deletes the untracked plus launcher. Put it back.
+    print("  Restoring extra demo launchers...")
+    restore_plus(plus_files)
+
+    # 5. Verify with prereq.py
     rc = run_prereq_check()
     if rc != 0:
         print("\nReset completed but some checks failed. Review the output above.")
         return 1
 
-    print("\nNext: ./demo.sh  (or: claude  ->  paste prompt from DEMO_PROMPT.md)")
+    print("\nNext: ./demo.sh  or  ./demoplus.sh  or  ./mfw.sh")
     return 0
 
 

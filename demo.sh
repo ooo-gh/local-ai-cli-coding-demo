@@ -27,7 +27,7 @@ set -euo pipefail
 REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 SESSION="demo"
 CLAUDE_VOLUME="taskboard-demo-claude"
-PROMPT_FILE="$REPO/DEMO_PROMPT.md"
+PROMPT_FILE="${DEMO_PROMPT_FILE:-$REPO/DEMO_PROMPT.md}"
 # Generous on purpose: on a fresh ~/.claude volume this has to outlast an OAuth
 # login before the input box exists. (post_create.py pre-answers the theme, TUI
 # and trust dialogs, so the login is all that is left.) The poller exits the
@@ -186,11 +186,11 @@ else:
     body = "\n".join(lines).strip()
 
 if not body:
-    sys.exit("DEMO_PROMPT.md has no prompt body after the '---' separator")
+    sys.exit("prompt file has no prompt body after the '---' separator")
 
 sys.stdout.write(body)
 PY
-)" || die "could not extract the prompt from DEMO_PROMPT.md"
+)" || die "could not extract the prompt from $PROMPT_FILE"
 
   printf '%s' "$prompt" | cexec_i tmux load-buffer -b demo-prompt -
 
