@@ -13,7 +13,7 @@ A reproducible demo showing Claude Code generating code, the Semgrep plugin auto
   `claude plugin marketplace add semgrep/guardian && claude plugin install semgrep@semgrep-marketplace`
 - Semgrep 1.x+ installed and logged in (OIDC credentials in `~/.semgrep/guardian.yml`)
 - For `./demoplus.sh` only: your deployment is on the `guardian.shadow_review_enabled` feature flag. Sign-in alone does not turn Shadow on. Add the deployment to that flag before presenting, or Shadow stays silent while the five rule findings still appear. `./demo.sh` does not need the flag.
-- For `./mfw.sh` only: this one runs on the host, not in the devcontainer — the firewall's proxy and daemon only run on your machine, so the container can't block installs. The deployment must be in the Malware Firewall private beta (ask your Semgrep admin; sign-in alone doesn't enable it), `mfw` must be installed (`/install-mfw` or the docs installer), and `mfw doctor` must report "protecting this machine". The prompt installs Semgrep's demo fixture `semgrep-malware-demo-aws-cred-read`, which the firewall then blocks.
+- For `./mfw.sh` only: this runs the [docs "Test the firewall" steps](https://docs.semgrep.dev/semgrep-supply-chain/malware-firewall#test-the-firewall) on the host — `uv init` then `uv add` the demo package — with no container and no Claude, because the firewall's proxy and daemon only run on your machine. The deployment must be in the Malware Firewall private beta (ask your Semgrep admin; sign-in alone doesn't enable it), `mfw` must be installed (`/install-mfw` or the docs installer), and `mfw doctor` must report "protecting this machine".
 
 **Run the automated check:**
 

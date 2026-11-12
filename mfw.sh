@@ -1,91 +1,99 @@
 #!/usr/bin/env bash
 #
-# Malware Firewall demo, on the host (not the devcontainer).
+# Malware Firewall demo — runs the exact "Test the firewall" steps from
+# https://docs.semgrep.dev/semgrep-supply-chain/malware-firewall#test-the-firewall
 #
-# The firewall gates package installs through a local proxy + daemon that only
-# run on your machine, so this demo runs Claude Code on the host, in a shell
-# where mfw's proxy env is active. The container cannot block installs.
+# It runs on the host (the firewall's proxy + daemon only run on your machine),
+# in a throwaway project, so the audience watches a real install get blocked.
+# No Claude, no container.
 #
-#   ./mfw.sh                      launch Claude on the host, prompt on the clipboard
-#   ./mfw.sh --no-prefill         don't touch the clipboard
-#   ./mfw.sh --permission-mode X  Claude permission mode (default: Claude's own)
-#   ./mfw.sh --model <id>         model to launch with (default: claude-opus-5-5)
-#   ./mfw.sh --skip-checks        skip the mfw readiness check
+#   ./mfw.sh              uv init + uv add the demo package (expected: blocked)
+#   ./mfw.sh --pip        also repeat the test with pip
+#   ./mfw.sh --keep       keep the temp project instead of deleting it
+#   ./mfw.sh --skip-checks  skip the mfw doctor readiness check
 #
-# Read the prompt aloud off the projector, paste it (Cmd-V), and hit Enter.
+# Demo package: semgrep-malware-demo-aws-cred-read — Semgrep's published, harmless
+# fixture. It does not read credentials or run anything; it only trips the firewall.
 
 set -euo pipefail
 
-REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-PROMPT_FILE="$REPO/MFW_PROMPT.md"
-MODEL="${DEMO_MODEL:-claude-opus-5-5}"
-PERMISSION_MODE="${DEMO_PERMISSION_MODE:-}"
-PREFILL=1
+PKG="semgrep-malware-demo-aws-cred-read"
+RUN_PIP=0
+KEEP=0
 SKIP_CHECKS=0
 
 die()  { printf '\033[31merror:\033[0m %s\n' "$*" >&2; exit 1; }
 info() { printf '\033[36m==>\033[0m %s\n' "$*" >&2; }
 warn() { printf '\033[33mwarn:\033[0m %s\n' "$*" >&2; }
+step() { printf '\n\033[1;36m$ %s\033[0m\n' "$*" >&2; }
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
-    --no-prefill)      PREFILL=0; shift ;;
-    --skip-checks)     SKIP_CHECKS=1; shift ;;
-    --permission-mode) PERMISSION_MODE="${2:?--permission-mode needs a value}"; shift 2 ;;
-    --model)           MODEL="${2:?--model needs a value}"; shift 2 ;;
-    -h|--help)         awk 'NR>2 && /^#/ {sub(/^# ?/, ""); print; next} NR>2 {exit}' \
-                         "${BASH_SOURCE[0]}"; exit 0 ;;
-    *)                 die "unknown option: $1 (try --help)" ;;
+    --pip)         RUN_PIP=1; shift ;;
+    --keep)        KEEP=1; shift ;;
+    --skip-checks) SKIP_CHECKS=1; shift ;;
+    -h|--help)     awk 'NR>2 && /^#/ {sub(/^# ?/, ""); print; next} NR>2 {exit}' \
+                     "${BASH_SOURCE[0]}"; exit 0 ;;
+    *)             die "unknown option: $1 (try --help)" ;;
   esac
 done
 
-command -v claude >/dev/null || die "claude not found on PATH"
-[[ -f "$PROMPT_FILE" ]] || die "missing $PROMPT_FILE"
-
-# Make sure this shell has mfw's PATH shims and proxy env, even if the launcher
-# was started from a shell that never sourced them.
+# Give this shell mfw's PATH shims and proxy env even if it never sourced them.
 if [[ -f "$HOME/.semgrep/mfw/rc-setup.sh" ]]; then
   # shellcheck disable=SC1091
   source "$HOME/.semgrep/mfw/rc-setup.sh"
 fi
 
-# ── Firewall readiness ───────────────────────────────────────────────────────
-# Without this the install just succeeds and there is nothing to show. The two
-# common reasons are mfw not installed, and a deployment not in the firewall beta.
+command -v uv >/dev/null || die "uv not found on PATH -- install uv first (https://docs.astral.sh/uv/)"
 
+# ── Verify the firewall is active (docs: Install and verify) ──────────────────
 if (( ! SKIP_CHECKS )); then
-  if ! command -v mfw >/dev/null; then
-    warn "mfw is not installed on this machine -- run /install-mfw (or the docs installer) first."
-    warn "without it the install will NOT be blocked. Continuing anyway."
-  else
-    doctor="$(mfw doctor 2>&1 || true)"
-    if printf '%s' "$doctor" | grep -q "protecting this machine"; then
-      info "mfw doctor: machine protected"
-    else
-      warn "mfw doctor does not report this machine protected. The install will not be blocked until this is fixed:"
-      printf '%s\n' "$doctor" | grep -E '✗|isn.t enabled|not .*enabled|deployment' | sed 's/^/    /' >&2 || true
-      warn "if the deployment isn't in the Malware Firewall beta, ask your Semgrep admin to enable it."
-    fi
+  command -v mfw >/dev/null || die "mfw not installed -- run /install-mfw or the docs installer, then restart your shell"
+  step "mfw doctor"
+  doctor="$(mfw doctor 2>&1 || true)"
+  printf '%s\n' "$doctor" >&2
+  if ! printf '%s' "$doctor" | grep -q "protecting this machine"; then
+    warn "mfw doctor does not report \"protecting this machine\"."
+    warn "If your deployment isn't in the Malware Firewall beta, the install will NOT be blocked."
+    warn "Ask your Semgrep admin to enable it, then re-run. (Use --skip-checks to proceed anyway.)"
+    die "firewall not ready"
   fi
 fi
 
-# ── Prompt onto the clipboard ────────────────────────────────────────────────
+# ── Test the firewall (docs: Test the firewall) ───────────────────────────────
+WORKDIR="$(mktemp -d "${TMPDIR:-/tmp}/mfw-demo.XXXXXX")"
+cleanup() { (( KEEP )) || rm -rf "$WORKDIR"; }
+trap cleanup EXIT
+info "test project: $WORKDIR"
+cd "$WORKDIR"
 
-prompt="$(awk 'f{print} /^---$/{f=1}' "$PROMPT_FILE" | sed '/./,$!d')"
-[[ -n "$prompt" ]] || die "no prompt body after the '---' separator in $PROMPT_FILE"
+# Step 1 — initialize a project
+step "uv init"
+uv init
 
-if (( PREFILL )) && command -v pbcopy >/dev/null; then
-  printf '%s' "$prompt" | pbcopy
-  info "prompt copied to the clipboard -- paste it into Claude (Cmd-V) and press Enter"
+# Step 2 — attempt to install the demo malware package (expected: blocked)
+step "uv add --no-cache $PKG"
+if uv add --no-cache "$PKG"; then
+  warn "The install was NOT blocked. The firewall isn't intercepting this install."
+  warn "Check 'mfw doctor' and that the deployment is in the firewall beta."
+  blocked=0
 else
-  info "prompt (paste into Claude, then press Enter):"
+  info "Install blocked by the Malware Firewall — this is the expected result."
+  blocked=1
 fi
-printf '\n%s\n\n' "$prompt" >&2
 
-# ── Launch Claude Code on the host ───────────────────────────────────────────
+# Optional — repeat with pip
+if (( RUN_PIP )); then
+  step "pip install --no-cache $PKG"
+  if pip install --no-cache "$PKG"; then
+    warn "pip install was NOT blocked."
+  else
+    info "pip install blocked by the Malware Firewall — expected."
+  fi
+fi
 
-cd "$REPO"
-claude_args=(--model "$MODEL")
-[[ -n "$PERMISSION_MODE" ]] && claude_args+=(--permission-mode "$PERMISSION_MODE")
-info "starting Claude Code on the host in $REPO"
-exec claude "${claude_args[@]}"
+if (( ! KEEP )); then
+  info "cleaning up $WORKDIR"
+fi
+
+(( ${blocked:-0} == 1 )) && exit 0 || exit 1

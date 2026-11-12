@@ -233,7 +233,6 @@ PLUS_KEEP = (
     "DEMO_PROMPT_PLUS.md",
     "PLUS.md",
     "mfw.sh",
-    "MFW_PROMPT.md",
 )
 
 
